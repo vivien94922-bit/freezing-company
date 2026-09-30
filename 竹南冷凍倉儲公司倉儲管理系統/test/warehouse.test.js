@@ -105,6 +105,10 @@ test('scrap needs a reason and cannot reduce a batch below zero', async () => {
   const result=await request('/api/scraps','POST',{warehouse:'W01',product:'P001',batchId:batch.batch_id,quantity:1,reason:'腐爛'});
   assert.equal(result.status,201);assert.equal(result.body.remaining,batch.quantity-1);
   assert.equal(db.prepare("SELECT reason FROM transactions WHERE type='scrap'").get().reason,'腐爛');
+  assert.equal((await request('/api/scraps','POST',{warehouse:'W01',product:'P001',batchId:batch.batch_id,quantity:1,reasonCategory:'其他',reason:'其他',reasonOther:''})).status,400);
+  const custom=await request('/api/scraps','POST',{warehouse:'W01',product:'P001',batchId:batch.batch_id,quantity:1,reasonCategory:'其他',reason:'冷凍灼傷',reasonOther:'冷凍灼傷'});
+  assert.equal(custom.status,201);
+  assert.equal(db.prepare("SELECT reason FROM transactions WHERE type='scrap' ORDER BY id DESC LIMIT 1").get().reason,'冷凍灼傷');
 });
 
 test('stocktake captures system quantity and records an adjustment when confirmed', async () => {
@@ -130,6 +134,8 @@ test('serves the app as HTML and supports validated warehouse, product and locat
   assert.match(app,/function receiptNote\(/);
   assert.match(app,/data-delete-inbound/);
   assert.match(app,/class="input pick-scan"/);
+  assert.match(app,/name="reasonCategory"/);
+  assert.match(app,/id="scrap-other-field"/);
   assert.equal((await request('/api/warehouses','POST',{id:'W03',name:'測試倉'})).status,201);
   assert.equal((await request('/api/products','POST',{id:'P005',name:'花椰菜',unit:'箱',minStock:2})).status,201);
   assert.equal((await request('/api/locations','POST',{warehouse:'W03',code:'C01',product:'P005',capacity:12})).status,201);
@@ -139,5 +145,7 @@ test('serves the app as HTML and supports validated warehouse, product and locat
   assert.equal(created.capacity,12);assert.equal(created.quantity,0);
   assert.equal((await request(`/api/locations/${created.id}`,'PATCH',{capacity:-1})).status,400);
   assert.equal((await request(`/api/locations/${created.id}`,'PATCH',{capacity:''})).status,400);
+  assert.equal((await request('/api/locations','POST',{warehouse:'W03',code:'C02'})).status,201);
+  assert.equal((await request('/api/locations')).body.find(x=>x.warehouse_id==='W03'&&x.code==='C02').capacity,20);
   assert.equal((await request('/api/warehouses','POST',{id:'bad',name:'錯誤'})).status,400);
 });
